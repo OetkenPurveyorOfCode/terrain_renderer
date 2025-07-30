@@ -29,7 +29,6 @@ impl Heightmap {
                     xi as f32 / x_divisions as f32,
                     yi as f32 / y_divisions as f32,
                 );
-                dbg!(u, v);
                 let (x, y) = (2. * u - 1., 2. * v - 1.);
                 let height =
                     0.5 * (generator.sample([x as f64 * 100., y as f64 * 100.]) as f32 + 1.0);
@@ -87,17 +86,33 @@ impl Heightmap {
             BufferSource::slice(&indices),
         );
 
-        let image = Image::from_file_with_format(
+        let grass_image = Image::from_file_with_format(
             include_bytes!("../assets/grass.png"),
             None,
         ).unwrap();
 
-        let texture_id = ctx.new_texture_from_rgba8(image.width, image.height, &image.bytes);
+        let grass_texture_id = ctx.new_texture(
+            TextureAccess::Static,
+            TextureSource::Bytes(&grass_image.bytes),
+            TextureParams{
+                kind: TextureKind::Texture2D,
+                format: TextureFormat::RGBA8,
+                wrap: TextureWrap::Clamp,
+                min_filter: FilterMode::Linear,
+                mag_filter: FilterMode::Linear,
+                mipmap_filter: MipmapFilterMode::Linear,
+                width: grass_image.width as u32,
+                height: grass_image.height as u32,
+                allocate_mipmaps: true,
+                sample_count: 1,
+            }
+        );
+        ctx.texture_generate_mipmaps(grass_texture_id);
 
         let bindings = Bindings {
             vertex_buffers: vec![vertex_buffer],
             index_buffer: index_buffer,
-            images: vec![texture_id],
+            images: vec![grass_texture_id],
         };
 
         let shader = ctx

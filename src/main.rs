@@ -12,6 +12,7 @@ fn window_conf() -> Conf {
         sample_count: 1,
         platform: Platform {
             apple_gfx_api: miniquad::conf::AppleGfxApi::OpenGl,
+            swap_interval: Some(0),
             ..Default::default()
         },
         ..Default::default()
@@ -43,6 +44,7 @@ async fn main() {
             ..Default::default()
         };*/
         // input
+        let dt = get_frame_time();
         if is_key_down(KeyCode::E) {
             let delta = (camera.target - camera.position).normalize() * camera_speed;
             camera.position += delta;
@@ -52,25 +54,25 @@ async fn main() {
             camera.position -= delta;
         }
         if is_key_down(KeyCode::D) {
-            let rot = Quat::from_axis_angle(camera.up, 1.0f32.to_radians());
+            let rot = Quat::from_axis_angle(camera.up, dt*100.0f32.to_radians());
             let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
             camera.position = mat.transform_point3(camera.position);
             camera.up = mat.transform_vector3(camera.up);
         }
         if is_key_down(KeyCode::A) {
-            let rot = Quat::from_axis_angle(camera.up, -1.0f32.to_radians());
+            let rot = Quat::from_axis_angle(camera.up, dt*-100.0f32.to_radians());
             let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
             camera.position = mat.transform_point3(camera.position);
             camera.up = mat.transform_vector3(camera.up);
         }
         if is_key_down(KeyCode::W) {
-            let rot = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), 1.0f32.to_radians());
+            let rot = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), dt*100.0f32.to_radians());
             let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
             camera.position = mat.transform_point3(camera.position);
             camera.up = mat.transform_vector3(camera.up);
         }
         if is_key_down(KeyCode::S) {
-            let rot = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), -1.0f32.to_radians());
+            let rot = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), dt*-100.0f32.to_radians());
             let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
             camera.position = mat.transform_point3(camera.position);
             camera.up = mat.transform_vector3(camera.up);
@@ -85,7 +87,8 @@ async fn main() {
         // Back to screen space, render some text
 
         set_default_camera();
-        draw_text("WELCOME TO 3D WORLD", 10.0, 20.0, 30.0, BLACK);
+        draw_fps();
+        //draw_text("WELCOME TO 3D WORLD", 10.0, 20.0, 30.0, BLACK);
 
         next_frame().await
     }
