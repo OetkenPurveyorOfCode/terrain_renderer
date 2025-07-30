@@ -6,15 +6,14 @@ struct Vertex2 {
     pos: Vec2,
 }
 
-pub struct Heightmap<'a> {
-    ctx: Box<&'a mut dyn RenderingBackend>,
+pub struct Heightmap {
     pipeline: Pipeline,
     bindings: Bindings,
 }
 
-impl<'a> Heightmap<'a> {
-    pub fn new() -> Heightmap<'a> {
-        let mut ctx = Box::new(unsafe {macroquad::window::get_internal_gl().quad_context });
+impl Heightmap {
+    pub fn new() -> Heightmap {
+        let ctx = Box::new(unsafe {macroquad::window::get_internal_gl().quad_context });
 
         #[rustfmt::skip]
         let vertices: [Vertex2; 4] = [
@@ -67,29 +66,29 @@ impl<'a> Heightmap<'a> {
         Heightmap {
             pipeline,
             bindings,
-            ctx,
         }
     }
 
     pub fn draw(&mut self, camera: &Camera3D) {
+        let ctx = Box::new(unsafe {macroquad::window::get_internal_gl().quad_context });
         let t = date::now();
 
-        self.ctx.begin_default_pass(Default::default());
+        ctx.begin_default_pass(Default::default());
 
-        self.ctx.apply_pipeline(&self.pipeline);
-        self.ctx.apply_bindings(&self.bindings);
+        ctx.apply_pipeline(&self.pipeline);
+        ctx.apply_bindings(&self.bindings);
         for i in 0..10 {
             let t = t + i as f64 * 0.3;
 
-            self.ctx
+            ctx
                 .apply_uniforms(UniformsSource::table(&shader::Uniforms {
                     offset: (t.sin() as f32 * 0.5, (t * 3.).cos() as f32 * 0.5),
                     projection: camera.matrix(),
                     model: Mat4::IDENTITY,
                 }));
-            self.ctx.draw(0, 6, 1);
+            ctx.draw(0, 6, 1);
         }
-        self.ctx.end_render_pass();
+        ctx.end_render_pass();
     }
 }
 
