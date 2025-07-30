@@ -1,9 +1,7 @@
 use macroquad::miniquad::conf::Platform;
 use macroquad::prelude::*;
-use libnoise::prelude::*;
-pub mod terrain;
+
 pub mod heightmap;
-pub use crate::terrain::*;
 pub use crate::heightmap::*;
 
 fn window_conf() -> Conf {
@@ -12,7 +10,10 @@ fn window_conf() -> Conf {
         //fullscreen: true,
         high_dpi: true,
         sample_count: 1,
-        platform: Platform{apple_gfx_api: miniquad::conf::AppleGfxApi::OpenGl, ..Default::default()},
+        platform: Platform {
+            apple_gfx_api: miniquad::conf::AppleGfxApi::OpenGl,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -43,11 +44,11 @@ async fn main() {
         };*/
         // input
         if is_key_down(KeyCode::E) {
-            let delta = (camera.target-camera.position).normalize()*camera_speed;
+            let delta = (camera.target - camera.position).normalize() * camera_speed;
             camera.position += delta;
         }
         if is_key_down(KeyCode::Q) {
-            let delta = (camera.target-camera.position).normalize()*camera_speed;
+            let delta = (camera.target - camera.position).normalize() * camera_speed;
             camera.position -= delta;
         }
         if is_key_down(KeyCode::D) {
@@ -80,14 +81,12 @@ async fn main() {
         //draw_mesh(&mesh);
         draw_grid(20, 0.1, BLACK, GRAY);
         stage.draw(&camera);
-        draw_cube_wires(vec3(0., 0., 0.), vec3(1., 1., 1.), DARKGREEN);
 
         // Back to screen space, render some text
 
         set_default_camera();
         draw_text("WELCOME TO 3D WORLD", 10.0, 20.0, 30.0, BLACK);
-        
+
         next_frame().await
     }
 }
-
