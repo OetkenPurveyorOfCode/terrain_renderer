@@ -1,3 +1,4 @@
+use macroquad::miniquad::conf::Platform;
 use macroquad::prelude::*;
 use libnoise::prelude::*;
 pub mod terrain;
@@ -5,10 +6,18 @@ pub mod heightmap;
 pub use crate::terrain::*;
 pub use crate::heightmap::*;
 
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Dirt Jam".to_owned(),
+        //fullscreen: true,
+        high_dpi: true,
+        sample_count: 1,
+        platform: Platform{apple_gfx_api: miniquad::conf::AppleGfxApi::OpenGl, ..Default::default()},
+        ..Default::default()
+    }
+}
 
-
-
-#[macroquad::main("Texture")]
+#[macroquad::main(window_conf)]
 async fn main() {
     let mut camera = Camera3D {
         position: vec3(2., 2., 2.),
@@ -17,7 +26,7 @@ async fn main() {
         ..Default::default()
     };
     let camera_speed = 0.3;
-    let mesh = gen_terrain_mesh(10, 10);
+    //let mesh = gen_terrain_mesh(10, 10);
     let mut stage = Heightmap::new();
     loop {
         clear_background(LIGHTGRAY);
@@ -68,7 +77,7 @@ async fn main() {
 
         // drawing
         set_camera(&camera);
-        draw_mesh(&mesh);
+        //draw_mesh(&mesh);
         draw_grid(20, 0.1, BLACK, GRAY);
         stage.draw(&camera);
         draw_cube_wires(vec3(0., 0., 0.), vec3(1., 1., 1.), DARKGREEN);
