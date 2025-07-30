@@ -1,1 +1,1 @@
-C:\Users\alexa\Coding_Projects\Rust\terrain\target\debug\fractal_flame.exe: C:\Users\alexa\Coding_Projects\Rust\terrain\src\main.rs C:\Users\alexa\Coding_Projects\Rust\terrain\src\terrain.rs
+C:\Users\alexa\Coding_Projects\Rust\terrain\target\debug\fractal_flame.exe: C:\Users\alexa\Coding_Projects\Rust\terrain\src\heightmap.rs C:\Users\alexa\Coding_Projects\Rust\terrain\src\main.rs C:\Users\alexa\Coding_Projects\Rust\terrain\src\terrain.rs
