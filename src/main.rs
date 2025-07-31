@@ -1,4 +1,5 @@
 use macroquad::miniquad::conf::Platform;
+use macroquad::miniquad::gl::{self, GL_FILL, GL_FRONT_AND_BACK, GL_LINE};
 use macroquad::prelude::*;
 
 pub mod heightmap;
@@ -28,30 +29,17 @@ async fn main() {
         ..Default::default()
     };
     let camera_speed = 0.3;
-    //let mesh = gen_terrain_mesh(10, 10);
     let mut stage = Heightmap::new();
     loop {
-        clear_background(LIGHTGRAY);
-        /*
-        let mut bytes : Vec<u8> = Vec::with_capacity(4*800*600);
-
-        let texture = Texture2D::from_rgba8(800, 600, &bytes);
-        let params = DrawTextureParams {
-            dest_size: Some(Vec2 {
-                x: screen_width(),
-                y: screen_height(),
-            }),
-            ..Default::default()
-        };*/
         // input
         let dt = get_frame_time();
         if is_key_down(KeyCode::E) {
             let delta = (camera.target - camera.position).normalize() * camera_speed;
-            camera.position += delta;
+            camera.position += delta*dt;
         }
         if is_key_down(KeyCode::Q) {
             let delta = (camera.target - camera.position).normalize() * camera_speed;
-            camera.position -= delta;
+            camera.position -= delta*dt;
         }
         if is_key_down(KeyCode::D) {
             let rot = Quat::from_axis_angle(camera.up, dt*100.0f32.to_radians());
@@ -66,6 +54,7 @@ async fn main() {
             camera.up = mat.transform_vector3(camera.up);
         }
         if is_key_down(KeyCode::W) {
+            //dbg!(camera.up, camera.target, camera.up.cross(camera.position-camera.target).normalize());
             let rot = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), dt*100.0f32.to_radians());
             let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
             camera.position = mat.transform_point3(camera.position);
@@ -77,15 +66,20 @@ async fn main() {
             camera.position = mat.transform_point3(camera.position);
             camera.up = mat.transform_vector3(camera.up);
         }
+        if is_key_down(KeyCode::LeftShift) && is_key_down(KeyCode::W) {
+            unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)};
+        }
+        if is_key_down(KeyCode::RightShift) && is_key_down(KeyCode::W) {
+            unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)};
+        }
 
         // drawing
         set_camera(&camera);
-        //draw_mesh(&mesh);
+        clear_background(BLACK);
         draw_grid(20, 0.1, BLACK, GRAY);
-        stage.draw(&camera);
-
-        // Back to screen space, render some text
-
+        let model = Mat4::IDENTITY;
+        stage.draw(&camera, model);
+        // Back to screen space
         set_default_camera();
         draw_fps();
         //draw_text("WELCOME TO 3D WORLD", 10.0, 20.0, 30.0, BLACK);

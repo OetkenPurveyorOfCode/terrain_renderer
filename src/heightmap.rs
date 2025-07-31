@@ -17,9 +17,35 @@ struct Vertex {
     normal: Vec3,
 }
 
+fn texture_from_png(ctx: &mut Box<&mut dyn RenderingBackend>, bytes: &[u8]) -> TextureId {
+    let image = Image::from_file_with_format(
+        bytes,
+        None,
+    ).unwrap();
+
+    let texture_id = ctx.new_texture(
+        TextureAccess::Static,
+        TextureSource::Bytes(&image.bytes),
+        TextureParams{
+            kind: TextureKind::Texture2D,
+            format: TextureFormat::RGBA8,
+            wrap: TextureWrap::Clamp,
+            min_filter: FilterMode::Linear,
+            mag_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
+            width: image.width as u32,
+            height: image.height as u32,
+            allocate_mipmaps: true,
+            sample_count: 1,
+        }
+    );
+    ctx.texture_generate_mipmaps(texture_id);
+    return texture_id;
+}
+
 impl Heightmap {
     pub fn new() -> Heightmap {
-        let ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
+        let mut ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
         let (x_divisions, y_divisions) = (30, 30);
         let generator = Source::simplex(rand::rand() as u64).fbm(5, 0.013, 2.0, 0.5);
         let mut vertices = Vec::with_capacity(x_divisions * y_divisions);
@@ -40,8 +66,6 @@ impl Heightmap {
                 });
             }
         }
-
-
 
         let mut indices: Vec<u32> = Vec::with_capacity(6 * x_divisions * y_divisions);
         for xi in 0..x_divisions - 1 {
@@ -86,33 +110,15 @@ impl Heightmap {
             BufferSource::slice(&indices),
         );
 
-        let grass_image = Image::from_file_with_format(
-            include_bytes!("../assets/grass.png"),
-            None,
-        ).unwrap();
-
-        let grass_texture_id = ctx.new_texture(
-            TextureAccess::Static,
-            TextureSource::Bytes(&grass_image.bytes),
-            TextureParams{
-                kind: TextureKind::Texture2D,
-                format: TextureFormat::RGBA8,
-                wrap: TextureWrap::Clamp,
-                min_filter: FilterMode::Linear,
-                mag_filter: FilterMode::Linear,
-                mipmap_filter: MipmapFilterMode::Linear,
-                width: grass_image.width as u32,
-                height: grass_image.height as u32,
-                allocate_mipmaps: true,
-                sample_count: 1,
-            }
-        );
-        ctx.texture_generate_mipmaps(grass_texture_id);
+        let grass_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/grass.png"));
+        let snow_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/snow.png"));
+        let rock_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/rock.png"));
+        let dirt_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/dirt.png"));
 
         let bindings = Bindings {
             vertex_buffers: vec![vertex_buffer],
             index_buffer: index_buffer,
-            images: vec![grass_texture_id],
+            images: vec![grass_texture_id, snow_texture_id, rock_texture_id, dirt_texture_id],
         };
 
         let shader = ctx
@@ -149,18 +155,15 @@ impl Heightmap {
         }
     }
 
-    pub fn draw(&mut self, camera: &Camera3D) {
+    pub fn draw(&mut self, camera: &Camera3D, model: Mat4) {
         let ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
-        let t = date::now();
-
-        ctx.begin_default_pass(Default::default());
 
         ctx.apply_pipeline(&self.pipeline);
         ctx.apply_bindings(&self.bindings);
 
         ctx.apply_uniforms(UniformsSource::table(&shader::Uniforms {
             projection: camera.matrix(),
-            model: Mat4::IDENTITY,
+            model: model,
             light_dir: -camera.position.normalize(),
         }));
         ctx.draw(0, self.indices_len, 1);
@@ -182,35 +185,57 @@ mod shader {
     uniform mat4 model;
     uniform mat4 projection;
 
+    out vec3 pos;
     out vec4 color;
     out vec3 normal;
     out vec2 texcoord;
     void main() {
         gl_Position = projection*model*vec4(in_pos, 1);
         color = vec4(in_pos.y, in_pos.y, in_pos.y, 1.0);
+        pos = in_pos;
         normal = in_normal;
         texcoord = in_uv;
     }"#;
 
     pub const FRAGMENT: &str = r#"#version 330
+    in vec3 pos;
     in vec4 color;
     in vec3 normal;
     in vec2 texcoord;
 
     uniform vec3 light_dir = vec3(1.0, 0.0, 0.0);
-    uniform sampler2D terrain_texture;
+    uniform sampler2D snow_texture;
+    uniform sampler2D grass_texture;
+    uniform sampler2D rock_texture;
+    uniform sampler2D dirt_texture;
 
     out vec4 FragColor;
 
     void main() {
         float diffuse = dot(light_dir, normalize(normal));
         diffuse = max(0.3, diffuse);
-        FragColor = diffuse*texture(terrain_texture, texcoord);
+        vec4 texcolor;
+        if (pos.y < 0.25) {
+            texcolor = texture(dirt_texture, texcoord);
+        }
+        else if (0.25 <= pos.y && pos.y < 0.5) {
+            float t = 4.*(pos.y-0.25);
+            texcolor = mix(texture(dirt_texture, texcoord), texture(grass_texture, texcoord), t);
+        }
+        else if (0.5 <= pos.y && pos.y < 0.75) {
+            float t = 4.*(pos.y-0.5);
+            texcolor = mix(texture(grass_texture, texcoord), texture(rock_texture, texcoord), t);
+        }
+        else {
+            float t = 4.*(pos.y-0.75);
+            texcolor = mix(texture(rock_texture, texcoord), texture(snow_texture, texcoord), t);
+        }
+        FragColor = diffuse*texcolor ;
     }"#;
 
     pub fn meta() -> ShaderMeta {
         ShaderMeta {
-            images: vec!["terrain_texture".to_string()],
+            images: vec!["grass_texture".to_string(), "snow_texture".to_string(), "rock_texture".to_string(), "dirt_texture".to_string()],
             uniforms: UniformBlockLayout {
                 uniforms: vec![
                     UniformDesc::new("model", UniformType::Mat4),
