@@ -1,1 +1,0 @@
-Lambda<2, Blend<2, Fbm<2, libnoise::Simplex<2>>, Scale<2, Worley<2>>, Scale<2, Worley<2>>>, {closure@src\main.rs:16:21: 16:24}>

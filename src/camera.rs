@@ -50,7 +50,7 @@ pub fn camera_move_to_target(camera: &mut Camera3D, delta: f32) {
     camera.position = camera.target -distance*get_camera_forward(camera);
 }
 
-fn rotate_vector_axis_angle(input: Vec3, axis: Vec3, angle: f32) -> Vec3 {
+pub fn rotate_vector_axis_angle(input: Vec3, axis: Vec3, angle: f32) -> Vec3 {
     let rot = Quat::from_axis_angle(axis, angle);
     let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
     return mat.transform_vector3(input);

@@ -1,61 +1,19 @@
 use macroquad::miniquad::*;
 use macroquad::prelude::*;
 use libnoise::prelude::*;
+use std::collections::HashMap;
 
-pub struct Heightmap {
-    pipeline: Pipeline,
+#[derive(Clone)]
+pub struct Chunk {
+    offset: Vec2,
     bindings: Bindings,
     indices_len: i32,
 }
 
-
-#[repr(C)]
-struct Vertex {
-    pos: Vec3,
-    uv: Vec2,
-    color: Vec4,
-    normal: Vec3,
-}
-
-fn texture_from_png(ctx: &mut Box<&mut dyn RenderingBackend>, bytes: &[u8]) -> TextureId {
-    let image = Image::from_file_with_format(
-        bytes,
-        None,
-    ).unwrap();
-
-    let texture_id = ctx.new_texture(
-        TextureAccess::Static,
-        TextureSource::Bytes(&image.bytes),
-        TextureParams{
-            kind: TextureKind::Texture2D,
-            format: TextureFormat::RGBA8,
-            wrap: TextureWrap::Clamp,
-            min_filter: FilterMode::Linear,
-            mag_filter: FilterMode::Linear,
-            mipmap_filter: MipmapFilterMode::Linear,
-            width: image.width as u32,
-            height: image.height as u32,
-            allocate_mipmaps: true,
-            sample_count: 1,
-        }
-    );
-    ctx.texture_generate_mipmaps(texture_id);
-    return texture_id;
-}
-
-pub fn load_textures() -> Vec<TextureId> {
-    let mut ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
-    vec![texture_from_png(&mut ctx, include_bytes!("../assets/grass.png")),
-     texture_from_png(&mut ctx, include_bytes!("../assets/snow.png")),
-     texture_from_png(&mut ctx, include_bytes!("../assets/rock.png")),
-     texture_from_png(&mut ctx, include_bytes!("../assets/dirt.png"))]
-}
-
-impl Heightmap {
-    pub fn new<T: Generator<2>>(generator: &T, offset: Vec2, texture_ids: Vec<TextureId>) -> Heightmap {
-        let mut ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
-        let (x_divisions, y_divisions) = (10, 10);
-        
+impl Chunk {
+    pub fn new<T: Generator<2>>(generator: &T, offset: Vec2, texture_ids: Vec<TextureId>, divisions: (usize, usize), terrain_scale: f64) -> Chunk {
+        let ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
+        let (x_divisions, y_divisions) = divisions;
         let mut vertices = Vec::with_capacity(x_divisions * y_divisions);
         for xi in 0..x_divisions {
             for yi in 0..y_divisions {
@@ -77,11 +35,11 @@ impl Heightmap {
                     prev_v+offset.y,                   
                 );
                 let (height, next_x_height, next_y_height, prev_x_height, prev_y_height) = (
-                0.5 * (generator.sample([x as f64 * 100., y as f64 * 100.]) as f32 + 1.0),
-                0.5 * (generator.sample([next_x as f64 * 100., y as f64 * 100.]) as f32 + 1.0),
-                0.5 * (generator.sample([x as f64 * 100., next_y as f64 * 100.]) as f32 + 1.0),
-                0.5 * (generator.sample([prev_x as f64 * 100., y as f64 * 100.]) as f32 + 1.0),
-                0.5 * (generator.sample([x as f64 * 100., prev_y as f64 * 100.]) as f32 + 1.0));
+                0.5 * (generator.sample([x as f64 * terrain_scale, y as f64 * terrain_scale]) as f32 + 1.0),
+                0.5 * (generator.sample([next_x as f64 * terrain_scale, y as f64 * terrain_scale]) as f32 + 1.0),
+                0.5 * (generator.sample([x as f64 * terrain_scale, next_y as f64 * terrain_scale]) as f32 + 1.0),
+                0.5 * (generator.sample([prev_x as f64 * terrain_scale, y as f64 * terrain_scale]) as f32 + 1.0),
+                0.5 * (generator.sample([x as f64 * terrain_scale, prev_y as f64 * terrain_scale]) as f32 + 1.0));
                 let (pos, next_x_pos, next_y_pos, prev_x_pos, prev_y_pos) = (
                     Vec3::new(x, height, y),
                     Vec3::new(next_x, next_x_height, y),
@@ -110,27 +68,8 @@ impl Heightmap {
                 let next_xy_index: u32 = ((xi + 1) * x_divisions + yi + 1).try_into().unwrap();
                 indices.extend([index, next_x_index, next_xy_index].iter());
                 indices.extend([index, next_xy_index, next_y_index].iter());
-                /*let v0 = &vertices[index as usize];
-                let v1 = &vertices[next_x_index as usize];
-                let v2 = &vertices[next_xy_index as usize];
-                let normal = (v1.pos-v0.pos).cross(v2.pos-v0.pos).normalize();
-                vertices[index as usize].normal += normal;
-                vertices[next_x_index as usize].normal += normal;
-                vertices[next_xy_index as usize].normal += normal;
-
-                let v0 = &vertices[index as usize];
-                let v1 = &vertices[next_xy_index as usize];
-                let v2 = &vertices[next_y_index as usize];
-                let normal = (v1.pos-v0.pos).cross(v2.pos-v0.pos).normalize();
-                vertices[index as usize].normal += normal;
-                vertices[next_xy_index as usize].normal += normal;
-                vertices[next_y_index as usize].normal += normal;*/
             }
         }
-        /*
-        for vertex in &mut vertices {
-            vertex.normal = vertex.normal.normalize();
-        }*/
 
         let vertex_buffer = ctx.new_buffer(
             BufferType::VertexBuffer,
@@ -145,13 +84,62 @@ impl Heightmap {
             BufferSource::slice(&indices),
         );
 
-
-
         let bindings = Bindings {
             vertex_buffers: vec![vertex_buffer],
             index_buffer: index_buffer,
             images: texture_ids,
         };
+        Chunk {offset: offset, bindings: bindings, indices_len: indices.len() as i32}
+    }
+
+    fn draw(&mut self, pipeline: &Pipeline, camera: &Camera3D, light_dir: Vec3) {
+        let ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
+
+        ctx.apply_pipeline(&pipeline);
+        ctx.apply_bindings(&self.bindings);
+
+        ctx.apply_uniforms(UniformsSource::table(&shader::Uniforms {
+            projection: camera.matrix(),
+            model: Mat4::IDENTITY,
+            light_dir: -light_dir.normalize(),
+        }));
+        ctx.draw(0, self.indices_len, 1);
+        ctx.end_render_pass();
+    }
+}
+
+impl Drop for Chunk {
+    fn drop(&mut self) {
+        let ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
+        for vertex_buffer in &mut self.bindings.vertex_buffers {
+            ctx.delete_buffer(*vertex_buffer);
+        }
+        ctx.delete_buffer(self.bindings.index_buffer);
+    }
+}
+
+
+#[repr(C)]
+struct Vertex {
+    pos: Vec3,
+    uv: Vec2,
+    color: Vec4,
+    normal: Vec3,
+}
+
+pub struct Heightmap<T: Generator<2>> {
+    pub pipeline: Pipeline,
+    pub generator: T,
+    pub textures: Vec<TextureId>,
+    pub chunks: HashMap<IVec2, Chunk>,
+    pub divisions: (usize, usize),
+    pub terrain_scale: f64,
+}
+
+
+impl<T: Generator<2>> Heightmap<T> {
+    pub fn new(generator: T, divisions: (usize, usize), terrain_scale: f64) -> Heightmap<T> {
+        let ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
 
         let shader = ctx
             .new_shader(
@@ -179,27 +167,41 @@ impl Heightmap {
                 ..Default::default()
             },
         );
-
+        let textures = load_textures();
         Heightmap {
             pipeline,
-            bindings,
-            indices_len: indices.len() as i32,
+            generator,
+            textures,
+            chunks: HashMap::new(),
+            divisions,
+            terrain_scale
         }
     }
 
-    pub fn draw(&mut self, camera: &Camera3D, model: Mat4) {
-        let ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
+    pub fn draw(&mut self, camera: &Camera3D, light_dir: Vec3) {
+        // generate chunks around camera position
+        let camera_offset = camera.position.floor();
+        let camera_offset = IVec2::new(camera_offset.x as i32, camera_offset.z as i32);
+        let mut added = 0;
+        for x in -10..10 {
+            for y in -10..10 {
+                if added > 1 { break; }
+                let offset = camera_offset+IVec2::new(x,y);
+                self.chunks.entry(offset).or_insert_with(|| {
+                    added += 1;
+                    Chunk::new(&self.generator, Vec2::new(offset.x as f32, offset.y as f32), self.textures.clone(), self.divisions, self.terrain_scale)
+                });
+            }
+        }
+        if added >= 1 { dbg!(added);}
+        if self.chunks.len() >= 600 {
+            
+            self.chunks.retain(|key, _| (*key-camera_offset).length_squared() < 200);
+        }
 
-        ctx.apply_pipeline(&self.pipeline);
-        ctx.apply_bindings(&self.bindings);
-
-        ctx.apply_uniforms(UniformsSource::table(&shader::Uniforms {
-            projection: camera.matrix(),
-            model: model,
-            light_dir: -camera.position.normalize(),
-        }));
-        ctx.draw(0, self.indices_len, 1);
-        ctx.end_render_pass();
+        for (_, chunk) in &mut self.chunks {
+            chunk.draw(&self.pipeline, camera, light_dir);
+        }
     }
 }
 
@@ -229,7 +231,8 @@ mod shader {
         texcoord = in_uv;
     }"#;
 
-    pub const FRAGMENT: &str = r#"#version 330
+    pub const FRAGMENT: &str = r#"
+    #version 330
     in vec3 pos;
     in vec4 color;
     in vec3 normal;
@@ -284,4 +287,38 @@ mod shader {
         pub projection: Mat4,
         pub light_dir: Vec3,
     }
+}
+
+fn texture_from_png(ctx: &mut Box<&mut dyn RenderingBackend>, bytes: &[u8]) -> TextureId {
+    let image = Image::from_file_with_format(
+        bytes,
+        None,
+    ).unwrap();
+
+    let texture_id = ctx.new_texture(
+        TextureAccess::Static,
+        TextureSource::Bytes(&image.bytes),
+        TextureParams{
+            kind: TextureKind::Texture2D,
+            format: TextureFormat::RGBA8,
+            wrap: TextureWrap::Clamp,
+            min_filter: FilterMode::Linear,
+            mag_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
+            width: image.width as u32,
+            height: image.height as u32,
+            allocate_mipmaps: true,
+            sample_count: 1,
+        }
+    );
+    ctx.texture_generate_mipmaps(texture_id);
+    return texture_id;
+}
+
+pub fn load_textures() -> Vec<TextureId> {
+    let mut ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
+    vec![texture_from_png(&mut ctx, include_bytes!("../assets/grass.png")),
+     texture_from_png(&mut ctx, include_bytes!("../assets/snow.png")),
+     texture_from_png(&mut ctx, include_bytes!("../assets/rock.png")),
+     texture_from_png(&mut ctx, include_bytes!("../assets/dirt.png"))]
 }

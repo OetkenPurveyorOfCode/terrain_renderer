@@ -1,7 +1,7 @@
 use macroquad::miniquad::conf::Platform;
-use macroquad::miniquad::gl::{self, GL_FILL, GL_FRONT_AND_BACK, GL_LINE};
+
 use macroquad::prelude::*;
-use std::collections::HashMap;
+
 pub mod camera;
 pub use crate::camera::*;
 pub mod heightmap;
@@ -10,99 +10,80 @@ pub use crate::heightmap::*;
 fn window_conf() -> Conf {
     Conf {
         window_title: "Dirt Jam".to_owned(),
-        //fullscreen: true,
+        fullscreen: true,
         high_dpi: true,
         sample_count: 1,
         platform: Platform {
             apple_gfx_api: miniquad::conf::AppleGfxApi::OpenGl,
-            swap_interval: Some(0),
+            swap_interval: Some(1),
             ..Default::default()
         },
         ..Default::default()
     }
 }
 
+#[cfg(target_family = "wasm")]
+fn enable_wireframe() {}
+#[cfg(target_family = "wasm")]
+fn disable_wireframe() {}
+
+#[cfg(not(target_family = "wasm"))]
+fn enable_wireframe() {
+    use macroquad::miniquad::gl::{self, GL_FRONT_AND_BACK, GL_LINE};
+    unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)};}
+#[cfg(not(target_family = "wasm"))]
+fn disable_wireframe() {
+    use macroquad::miniquad::gl::{self, GL_FILL, GL_FRONT_AND_BACK};
+    unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)};}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut camera = Camera3D {
-        position: vec3(3., 3., 3.),
+        position: vec3(3., 0.8, 0.0),
         up: vec3(0., 1., 0.),
         target: vec3(0., 0., 0.),
         ..Default::default()
     };
-    let camera_speed = 0.3;
     use libnoise::prelude::*;
-    let textures = load_textures();
     let generator = libnoise::Source::simplex(rand::rand() as u64).fbm(5, 0.013, 2.0, 0.5);
-    let mut chunks : HashMap<IVec2, Heightmap> = HashMap::new();
+    let mut light_dir = Vec3::new(10.0, 2.0, 0.0).normalize();
+    let mut heightmap = Heightmap::new(generator, (50, 50), 45.);
+    let mut fly_forward = true;
+    let mut dir = 1.;
     loop {
         // input
-
         let dt = get_frame_time();
-        /*if is_key_down(KeyCode::E) {
-            let delta = (camera.target - camera.position).normalize() * camera_speed;
-            camera.position += delta*dt;
+        if fly_forward {
+            camera_move_forward(&mut camera, dt, true);
         }
-        if is_key_down(KeyCode::Q) {
-            let delta = (camera.target - camera.position).normalize() * camera_speed;
-            camera.position -= delta*dt;
-        }
-        if is_key_down(KeyCode::D) {
-            let rot = Quat::from_axis_angle(camera.up, dt*100.0f32.to_radians());
-            let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
-            camera.position = mat.transform_point3(camera.position);
-            camera.up = mat.transform_vector3(camera.up);
-        }
-        if is_key_down(KeyCode::A) {
-            let rot = Quat::from_axis_angle(camera.up, dt*-100.0f32.to_radians());
-            let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
-            camera.position = mat.transform_point3(camera.position);
-            camera.up = mat.transform_vector3(camera.up);
-        }
-        if is_key_down(KeyCode::W) {
-            //dbg!(camera.up, camera.target, camera.up.cross(camera.position-camera.target).normalize());
-            let rot = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), dt*100.0f32.to_radians());
-            let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
-            camera.position = mat.transform_point3(camera.position);
-            camera.up = mat.transform_vector3(camera.up);
-        }
-        if is_key_down(KeyCode::S) {
-            let rot = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), dt*-100.0f32.to_radians());
-            let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
-            camera.position = mat.transform_point3(camera.position);
-            camera.up = mat.transform_vector3(camera.up);
-        }*/
         update_camera(&mut camera);
+        if is_key_down(KeyCode::Escape) {
+            break;
+        }
+        if is_key_pressed(KeyCode::T) {
+            fly_forward = !fly_forward;
+        }
         if is_key_down(KeyCode::LeftShift) && is_key_down(KeyCode::W) {
-            unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)};
+            enable_wireframe();
         }
         if is_key_down(KeyCode::RightShift) && is_key_down(KeyCode::W) {
-            unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)};
+            disable_wireframe();
         }
-        // generate chunks around camera position
-        let camera_offset = camera.position.floor();
-        let camera_offset = IVec2::new(camera_offset.x as i32, camera_offset.z as i32);
-        for x in -2..2 {
-            for y in -2..2 {
-                let offset = camera_offset+IVec2::new(x,y);
-                chunks.entry(offset).or_insert_with(|| {
-                    dbg!(offset);
-                    Heightmap::new(&generator, Vec2::new(offset.x as f32, offset.y as f32), textures.clone())
-                });
-            }
+        if light_dir.y < 0. {
+            dir *= -1.;
         }
+        light_dir = rotate_vector_axis_angle(light_dir, vec3(0., 0., 1.), 0.3*dir*dt);
+
         // drawing
         set_camera(&camera);
         clear_background(BLACK);
         draw_grid(20, 0.1, BLACK, GRAY);
-        let model = Mat4::IDENTITY;
-        for (_, chunk) in &mut chunks {
-            chunk.draw(&camera, model);
-        }
+        heightmap.draw(&camera, light_dir);
+
         // Back to screen space
         set_default_camera();
         draw_fps();
-        draw_text(&format!("{:?}", camera.position), 10.0, 50.0, 10.0, WHITE);
+        draw_text(&format!("{:?}", heightmap.chunks.len()), 10.0, 50.0, 20.0, WHITE);
 
         next_frame().await
     }
