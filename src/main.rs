@@ -2,7 +2,8 @@ use macroquad::miniquad::conf::Platform;
 use macroquad::miniquad::gl::{self, GL_FILL, GL_FRONT_AND_BACK, GL_LINE};
 use macroquad::prelude::*;
 use std::collections::HashMap;
-
+pub mod camera;
+pub use crate::camera::*;
 pub mod heightmap;
 pub use crate::heightmap::*;
 
@@ -24,20 +25,21 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut camera = Camera3D {
-        position: vec3(2., 2., 2.),
+        position: vec3(3., 3., 3.),
         up: vec3(0., 1., 0.),
         target: vec3(0., 0., 0.),
         ..Default::default()
     };
     let camera_speed = 0.3;
     use libnoise::prelude::*;
+    let textures = load_textures();
     let generator = libnoise::Source::simplex(rand::rand() as u64).fbm(5, 0.013, 2.0, 0.5);
     let mut chunks : HashMap<IVec2, Heightmap> = HashMap::new();
     loop {
         // input
 
         let dt = get_frame_time();
-        if is_key_down(KeyCode::E) {
+        /*if is_key_down(KeyCode::E) {
             let delta = (camera.target - camera.position).normalize() * camera_speed;
             camera.position += delta*dt;
         }
@@ -69,7 +71,8 @@ async fn main() {
             let mat = Mat4::from_rotation_translation(rot, vec3(0.0, 0.0, 0.0));
             camera.position = mat.transform_point3(camera.position);
             camera.up = mat.transform_vector3(camera.up);
-        }
+        }*/
+        update_camera(&mut camera);
         if is_key_down(KeyCode::LeftShift) && is_key_down(KeyCode::W) {
             unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)};
         }
@@ -78,13 +81,13 @@ async fn main() {
         }
         // generate chunks around camera position
         let camera_offset = camera.position.floor();
-        let camera_offset = IVec2::new(camera_offset.x as i32, camera_offset.y as i32);
+        let camera_offset = IVec2::new(camera_offset.x as i32, camera_offset.z as i32);
         for x in -2..2 {
             for y in -2..2 {
                 let offset = camera_offset+IVec2::new(x,y);
                 chunks.entry(offset).or_insert_with(|| {
                     dbg!(offset);
-                    Heightmap::new(&generator, Vec2::new(offset.x as f32, offset.y as f32))
+                    Heightmap::new(&generator, Vec2::new(offset.x as f32, offset.y as f32), textures.clone())
                 });
             }
         }
@@ -99,7 +102,7 @@ async fn main() {
         // Back to screen space
         set_default_camera();
         draw_fps();
-        //draw_text("WELCOME TO 3D WORLD", 10.0, 20.0, 30.0, BLACK);
+        draw_text(&format!("{:?}", camera.position), 10.0, 50.0, 10.0, WHITE);
 
         next_frame().await
     }

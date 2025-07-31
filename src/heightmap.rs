@@ -9,7 +9,6 @@ pub struct Heightmap {
 }
 
 
-
 #[repr(C)]
 struct Vertex {
     pos: Vec3,
@@ -44,27 +43,60 @@ fn texture_from_png(ctx: &mut Box<&mut dyn RenderingBackend>, bytes: &[u8]) -> T
     return texture_id;
 }
 
+pub fn load_textures() -> Vec<TextureId> {
+    let mut ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
+    vec![texture_from_png(&mut ctx, include_bytes!("../assets/grass.png")),
+     texture_from_png(&mut ctx, include_bytes!("../assets/snow.png")),
+     texture_from_png(&mut ctx, include_bytes!("../assets/rock.png")),
+     texture_from_png(&mut ctx, include_bytes!("../assets/dirt.png"))]
+}
+
 impl Heightmap {
-    pub fn new<T: Generator<2>>(generator: &T, offset: Vec2) -> Heightmap {
+    pub fn new<T: Generator<2>>(generator: &T, offset: Vec2, texture_ids: Vec<TextureId>) -> Heightmap {
         let mut ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
-        let (x_divisions, y_divisions) = (15, 15);
+        let (x_divisions, y_divisions) = (10, 10);
         
         let mut vertices = Vec::with_capacity(x_divisions * y_divisions);
         for xi in 0..x_divisions {
             for yi in 0..y_divisions {
-                let (u, v) = (
+                let (u, v, next_u, next_v, prev_u, prev_v) = (
                     xi as f32 / (x_divisions-1) as f32,
                     yi as f32 / (y_divisions-1) as f32,
+                    (xi as f32 +1.)/ (x_divisions-1) as f32,
+                    (yi as f32 +1.) / (y_divisions-1) as f32,
+                    (xi as f32 -1.) / (x_divisions-1) as f32,
+                    (yi as f32 -1.) / (y_divisions-1) as f32,
                 );
                 //let (x, y) = (2. * u - 1., 2. * v - 1.);
-                let (x, y) = (u+offset.x, v+offset.y);
-                let height =
-                    0.5 * (generator.sample([x as f64 * 100., y as f64 * 100.]) as f32 + 1.0);
+                let (x, y, next_x, next_y, prev_x, prev_y) = (
+                    u+offset.x,
+                    v+offset.y,
+                    next_u+offset.x,
+                    next_v+offset.y,
+                    prev_u+offset.x,
+                    prev_v+offset.y,                   
+                );
+                let (height, next_x_height, next_y_height, prev_x_height, prev_y_height) = (
+                0.5 * (generator.sample([x as f64 * 100., y as f64 * 100.]) as f32 + 1.0),
+                0.5 * (generator.sample([next_x as f64 * 100., y as f64 * 100.]) as f32 + 1.0),
+                0.5 * (generator.sample([x as f64 * 100., next_y as f64 * 100.]) as f32 + 1.0),
+                0.5 * (generator.sample([prev_x as f64 * 100., y as f64 * 100.]) as f32 + 1.0),
+                0.5 * (generator.sample([x as f64 * 100., prev_y as f64 * 100.]) as f32 + 1.0));
+                let (pos, next_x_pos, next_y_pos, prev_x_pos, prev_y_pos) = (
+                    Vec3::new(x, height, y),
+                    Vec3::new(next_x, next_x_height, y),
+                    Vec3::new(x, next_y_height, next_y),
+                    Vec3::new(prev_x, prev_x_height, y),
+                    Vec3::new(x, prev_y_height, prev_y),
+                );
+                let normal1 = (next_x_pos-pos).cross(next_y_pos-pos).normalize();
+                let normal2 = (prev_x_pos-pos).cross(prev_y_pos-pos).normalize();
+                let normal = (normal1 + normal2).normalize();
                 vertices.push(Vertex {
                     pos: Vec3::new(x, height, y),
                     uv: Vec2::new(u, v),
                     color: Vec4::new(1.0, height, height, 1.0),
-                    normal: Vec3::ZERO,
+                    normal: normal,
                 });
             }
         }
@@ -78,7 +110,7 @@ impl Heightmap {
                 let next_xy_index: u32 = ((xi + 1) * x_divisions + yi + 1).try_into().unwrap();
                 indices.extend([index, next_x_index, next_xy_index].iter());
                 indices.extend([index, next_xy_index, next_y_index].iter());
-                let v0 = &vertices[index as usize];
+                /*let v0 = &vertices[index as usize];
                 let v1 = &vertices[next_x_index as usize];
                 let v2 = &vertices[next_xy_index as usize];
                 let normal = (v1.pos-v0.pos).cross(v2.pos-v0.pos).normalize();
@@ -92,12 +124,13 @@ impl Heightmap {
                 let normal = (v1.pos-v0.pos).cross(v2.pos-v0.pos).normalize();
                 vertices[index as usize].normal += normal;
                 vertices[next_xy_index as usize].normal += normal;
-                vertices[next_y_index as usize].normal += normal;
+                vertices[next_y_index as usize].normal += normal;*/
             }
         }
+        /*
         for vertex in &mut vertices {
             vertex.normal = vertex.normal.normalize();
-        }
+        }*/
 
         let vertex_buffer = ctx.new_buffer(
             BufferType::VertexBuffer,
@@ -112,15 +145,12 @@ impl Heightmap {
             BufferSource::slice(&indices),
         );
 
-        let grass_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/grass.png"));
-        let snow_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/snow.png"));
-        let rock_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/rock.png"));
-        let dirt_texture_id = texture_from_png(&mut ctx, include_bytes!("../assets/dirt.png"));
+
 
         let bindings = Bindings {
             vertex_buffers: vec![vertex_buffer],
             index_buffer: index_buffer,
-            images: vec![grass_texture_id, snow_texture_id, rock_texture_id, dirt_texture_id],
+            images: texture_ids,
         };
 
         let shader = ctx
