@@ -1,6 +1,7 @@
 use macroquad::miniquad::conf::Platform;
 use macroquad::miniquad::gl::{self, GL_FILL, GL_FRONT_AND_BACK, GL_LINE};
 use macroquad::prelude::*;
+use std::collections::HashMap;
 
 pub mod heightmap;
 pub use crate::heightmap::*;
@@ -29,9 +30,12 @@ async fn main() {
         ..Default::default()
     };
     let camera_speed = 0.3;
-    let mut stage = Heightmap::new();
+    use libnoise::prelude::*;
+    let generator = libnoise::Source::simplex(rand::rand() as u64).fbm(5, 0.013, 2.0, 0.5);
+    let mut chunks : HashMap<IVec2, Heightmap> = HashMap::new();
     loop {
         // input
+
         let dt = get_frame_time();
         if is_key_down(KeyCode::E) {
             let delta = (camera.target - camera.position).normalize() * camera_speed;
@@ -72,13 +76,26 @@ async fn main() {
         if is_key_down(KeyCode::RightShift) && is_key_down(KeyCode::W) {
             unsafe {gl::glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)};
         }
-
+        // generate chunks around camera position
+        let camera_offset = camera.position.floor();
+        let camera_offset = IVec2::new(camera_offset.x as i32, camera_offset.y as i32);
+        for x in -2..2 {
+            for y in -2..2 {
+                let offset = camera_offset+IVec2::new(x,y);
+                chunks.entry(offset).or_insert_with(|| {
+                    dbg!(offset);
+                    Heightmap::new(&generator, Vec2::new(offset.x as f32, offset.y as f32))
+                });
+            }
+        }
         // drawing
         set_camera(&camera);
         clear_background(BLACK);
         draw_grid(20, 0.1, BLACK, GRAY);
         let model = Mat4::IDENTITY;
-        stage.draw(&camera, model);
+        for (_, chunk) in &mut chunks {
+            chunk.draw(&camera, model);
+        }
         // Back to screen space
         set_default_camera();
         draw_fps();

@@ -1,5 +1,6 @@
 use macroquad::miniquad::*;
 use macroquad::prelude::*;
+use libnoise::prelude::*;
 
 pub struct Heightmap {
     pipeline: Pipeline,
@@ -7,7 +8,7 @@ pub struct Heightmap {
     indices_len: i32,
 }
 
-use libnoise::prelude::*;
+
 
 #[repr(C)]
 struct Vertex {
@@ -44,18 +45,19 @@ fn texture_from_png(ctx: &mut Box<&mut dyn RenderingBackend>, bytes: &[u8]) -> T
 }
 
 impl Heightmap {
-    pub fn new() -> Heightmap {
+    pub fn new<T: Generator<2>>(generator: &T, offset: Vec2) -> Heightmap {
         let mut ctx = Box::new(unsafe { macroquad::window::get_internal_gl().quad_context });
-        let (x_divisions, y_divisions) = (30, 30);
-        let generator = Source::simplex(rand::rand() as u64).fbm(5, 0.013, 2.0, 0.5);
+        let (x_divisions, y_divisions) = (15, 15);
+        
         let mut vertices = Vec::with_capacity(x_divisions * y_divisions);
         for xi in 0..x_divisions {
             for yi in 0..y_divisions {
                 let (u, v) = (
-                    xi as f32 / x_divisions as f32,
-                    yi as f32 / y_divisions as f32,
+                    xi as f32 / (x_divisions-1) as f32,
+                    yi as f32 / (y_divisions-1) as f32,
                 );
-                let (x, y) = (2. * u - 1., 2. * v - 1.);
+                //let (x, y) = (2. * u - 1., 2. * v - 1.);
+                let (x, y) = (u+offset.x, v+offset.y);
                 let height =
                     0.5 * (generator.sample([x as f64 * 100., y as f64 * 100.]) as f32 + 1.0);
                 vertices.push(Vertex {
